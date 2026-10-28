@@ -111,6 +111,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:  # noqa: C901 -- 端点面平
                     "title": str(row.get("title") or ""),
                     "origin": _url("en_pdf"),
                     "zhCN": _url("zh_pdf"),
+                    # 扩展键：中英对照版（按需生成，未生成为空串）
+                    "bi": _url("bi_pdf"),
                     "zhCNTar": _url("zh_src_zip"),
                     "isDeepSeek": False,
                 },

@@ -390,6 +390,7 @@ export const t = {
     files: {
         "en.pdf": "Source PDF",
         "zh.pdf": "Translated PDF",
+        "bi.pdf": "Interleaved bilingual PDF",
         "dual.pdf": "Bilingual PDF",
         "dual.json": "Alignment data",
         "src.tar": "Original source",

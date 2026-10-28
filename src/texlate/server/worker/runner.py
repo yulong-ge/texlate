@@ -49,6 +49,13 @@ class _RetranslateJob:
     secrets: Secrets | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _BilingualJob:
+    """对照版 PDF 生成队列项——只读已落库译文，不发翻译请求，故不带 secrets。"""
+
+    task_id: str
+
+
 class TaskRunner:
     """``asyncio.Queue`` 单消费者 + secrets 注册表 + 心跳 + cancel 路由。
 
@@ -72,14 +79,16 @@ class TaskRunner:
         self.worker = worker
         self.worker_id = worker_id or f"w-{secrets_mod.token_hex(6)}"
         self.secrets: dict[str, Secrets] = {}
-        self._queue: asyncio.Queue[str | _RetranslateJob] | None = None
+        self._queue: asyncio.Queue[str | _RetranslateJob | _BilingualJob] | None = None
         #: ``_queue`` 未建（``start()`` 前）的入队暂存——此刻 enqueue
         #: 登记 secrets 却排不进队，header-BYOK 行会成 replay 不捞的
         #: 僵尸；暂存后 ``start()`` 建队即补灌
-        self._pending_enqueue: list[str | _RetranslateJob] = []
+        self._pending_enqueue: list[str | _RetranslateJob | _BilingualJob] = []
         #: 在队未派的 ``(task_id, seq)`` 重译去重集——job 开跑即摘
         #: （跑中再点是合法的第二次排队，不吞）
         self._retr_pending: set[tuple[str, int]] = set()
+        #: 在队未派的对照版 job 去重集（同任务连点只排一次）
+        self._bi_pending: set[str] = set()
         self._dispatcher: asyncio.Task[None] | None = None
         self._ticker: asyncio.Task[None] | None = None
         #: ``(task_id, ctx, task)``——ctx 在组里是为 cancel/stop 置
@@ -202,6 +211,31 @@ class TaskRunner:
         else:
             self._pending_enqueue.append(job)
 
+    def enqueue_bilingual(self, task_id: str) -> None:
+        """终态任务对照版 PDF 生成入队——与主队列同一串行域（读写 ``tasks/{id}/``）。
+
+        未知任务 ``KeyError``；非 done/partial 或源树未物化 ``ValueError``。同任务在队去重。
+        """
+        row = self.store.get(task_id)
+        if row is None:
+            msg = f"unknown task {task_id}"
+            raise KeyError(msg)
+        if row["status"] not in ("done", "partial"):
+            msg = f"task {task_id} status {row['status']} has no translation to pair"
+            raise ValueError(msg)
+        base = self.worker.data_dir / "tasks" / task_id / "base"
+        if not (base / ".base-done").is_file():
+            msg = f"task {task_id} has no materialized source tree"
+            raise ValueError(msg)
+        if task_id in self._bi_pending:
+            return
+        self._bi_pending.add(task_id)
+        job = _BilingualJob(task_id=task_id)
+        if self._queue is not None:
+            self._queue.put_nowait(job)
+        else:
+            self._pending_enqueue.append(job)
+
     def cancel_running(self, task_id: str) -> bool:
         """取消正在跑的任务；未在跑（还在队列）返回 False。
 
@@ -223,18 +257,18 @@ class TaskRunner:
         """
         ids: set[str] = set()
         for item in self._queued_items():
-            ids.add(item.task_id if isinstance(item, _RetranslateJob) else item)
+            ids.add(item if isinstance(item, str) else item.task_id)
         if self._current is not None:
             ids.add(self._current[0])
         return ids
 
-    def _queued_items(self) -> list[str | _RetranslateJob]:
+    def _queued_items(self) -> list[str | _RetranslateJob | _BilingualJob]:
         """在队项快照：``_pending_enqueue`` 暂存 + 内存队列现存项。
 
         ``asyncio.Queue`` 无公开快照面——读内部 deque 只扫不摘（loop
         单写者下无并发改形），私读收此单点，消费者勿再直探。
         """
-        items: list[str | _RetranslateJob] = list(self._pending_enqueue)
+        items: list[str | _RetranslateJob | _BilingualJob] = list(self._pending_enqueue)
         if self._queue is not None:
             items.extend(self._queue._queue)  # noqa: SLF001 -- 无公开快照面
         return items
@@ -249,6 +283,9 @@ class TaskRunner:
             try:
                 if isinstance(item, _RetranslateJob):
                     await self._retranslate_job(item)
+                    continue
+                if isinstance(item, _BilingualJob):
+                    await self._bilingual_job(item)
                     continue
                 task_id = item
                 row = self.store.get(task_id)
@@ -388,6 +425,26 @@ class TaskRunner:
             raise
         except Exception:
             log.exception("retranslate dispatch failed for %s", task_id)
+
+    async def _bilingual_job(self, job: _BilingualJob) -> None:
+        """终态任务对照版生成——占同一串行槽；行已离开 done/partial 则丢。"""
+        task_id = job.task_id
+        try:
+            self._bi_pending.discard(task_id)
+            row = self.store.get(task_id)
+            if row is None or row["status"] not in ("done", "partial"):
+                return
+            await self._run_slot(
+                task_id,
+                row,
+                None,
+                self.worker.run_bilingual,
+                f"texlate-bi-{task_id}",
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("bilingual dispatch failed for %s", task_id)
 
     async def _heartbeat_loop(self) -> None:
         """每 ``_HEARTBEAT_S`` 秒 bump 当前任务 updated_at。"""

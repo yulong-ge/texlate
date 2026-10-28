@@ -40,6 +40,7 @@ export interface TaskDownload {
 /** 下载清单排序：译文优先，工程包/日志/原文档殿后 */
 const ORDER: FileKind[] = [
     "zh.pdf",
+    "bi.pdf",
     "en.pdf",
     "dual.pdf",
     "dual.json",

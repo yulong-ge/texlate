@@ -71,6 +71,7 @@ from ._common import (
     chunk_db_id,
     chunk_error_code,
 )
+from .bilingual import _Bilingual
 from .compile import (
     _Compile,
     _fixloop_summary,
@@ -105,6 +106,7 @@ class PipelineWorker(
     _Compile,
     _Pdf,
     _Retranslate,
+    _Bilingual,
 ):
     """单任务管线驱动。注入面：translator_factory / fetcher / engine_factory。
 

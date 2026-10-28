@@ -270,6 +270,7 @@ export interface SlimReport {
 export type FileKind =
     | "en.pdf"
     | "zh.pdf"
+    | "bi.pdf"
     | "dual.pdf"
     | "dual.json"
     | "src.tar"
@@ -287,6 +288,7 @@ export type FileKind =
 export const DB_TO_URL_KIND: Record<string, FileKind> = {
     en_pdf: "en.pdf",
     zh_pdf: "zh.pdf",
+    bi_pdf: "bi.pdf",
     dual_pdf: "dual.pdf",
     dual_json: "dual.json",
     src_tar: "src.tar",

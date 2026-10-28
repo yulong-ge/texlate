@@ -38,6 +38,7 @@ KIND_URL = {
     "src_tar": "src.tar",
     "en_pdf": "en.pdf",
     "zh_pdf": "zh.pdf",
+    "bi_pdf": "bi.pdf",
     "dual_pdf": "dual.pdf",
     "dual_json": "dual.json",
     "zh_src_zip": "zh-src.zip",

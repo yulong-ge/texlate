@@ -376,6 +376,7 @@ export const t = {
     files: {
         "en.pdf": "原文 PDF",
         "zh.pdf": "译文 PDF",
+        "bi.pdf": "中英对照 PDF",
         "dual.pdf": "双语 PDF",
         "dual.json": "对照数据",
         "src.tar": "原始源码",

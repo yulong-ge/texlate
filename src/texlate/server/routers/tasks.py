@@ -420,6 +420,28 @@ def register(app: FastAPI, deps: AppDeps) -> None:  # noqa: C901, PLR0915 -- 端
         deps.runner.enqueue(task_id, deps.secrets_for(request, row))
         return _accepted(deps.store.get(task_id) or row, 202, {"cache": "retry"})
 
+    @app.post("/api/task/{task_id}/bilingual")
+    async def task_bilingual(request: Request, task_id: str) -> Response:
+        """终态任务对照版 PDF（``bi.pdf``）生成入队——202 ``{task_id, status:"queued"}``。
+
+        只读已落库译文，不发翻译请求；产物经 ``/api/files/{id}/bi.pdf`` 取。
+        非 done/partial 或源树未物化 409。
+        """
+        row = deps.get_task(request, task_id)
+        if str(row["status"]) not in ("done", "partial"):
+            return _json_error(
+                409,
+                f"任务状态 {row['status']}：仅 done/partial 终态可生成对照版",
+                "invalid_state",
+            )
+        try:
+            deps.runner.enqueue_bilingual(task_id)
+        except KeyError:
+            return _json_error(404, "task not found", "not_found")
+        except ValueError as e:
+            return _json_error(409, str(e), "invalid_state")
+        return JSONResponse({"task_id": task_id, "status": "queued"}, status_code=202)
+
     @app.post("/api/task/{task_id}/chunk/{seq}/retranslate")
     async def chunk_retranslate(request: Request, task_id: str, seq: int) -> Response:
         """终态任务单块重译入队——202 ``{task_id, seq, status:"queued"}``。
