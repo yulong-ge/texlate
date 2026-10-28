@@ -43,6 +43,10 @@ FRAMES = (
     "qualframe-magpie-swe2medium-ref.jsonl",
     "qualframe-magpie-nemo-ultra-free.jsonl",
     "qualframe-magpie-nemo-supervl-free.jsonl",
+    "qualframe-magpie-nemo-ultra-none.jsonl",
+    "qualframe-magpie-dots-none.jsonl",
+    "qualframe-magpie-northmini-none.jsonl",
+    "qualframe-magpie-laguna-s-none.jsonl",
 )
 
 
