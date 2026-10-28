@@ -41,6 +41,8 @@ FRAMES = (
     "qualframe-magpie-step5-low.jsonl",
     "qualframe-magpie-group-current.jsonl",
     "qualframe-magpie-swe2medium-ref.jsonl",
+    "qualframe-magpie-nemo-ultra-free.jsonl",
+    "qualframe-magpie-nemo-supervl-free.jsonl",
 )
 
 

@@ -1,0 +1,7 @@
+{
+ "manifest": "/Users/macbookair/code/codex-tasks/2026-10-28-alphaxiv-texlate-userscript/arms/nemo-ultra-free.jsonl",
+ "n_rows": 24,
+ "cmd": "manifest",
+ "judge": "codex/gpt-6.1-sol",
+ "seed": null
+}
