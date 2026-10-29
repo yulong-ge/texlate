@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from texlate.compile._docseams import _splice_before_document
 from texlate.compile.inject import prepare_chinese
 from texlate.latex.reconstruct import reconstruct
-from texlate.pipecore import compile_judge
+from texlate.pipecore import compile_judge, judge_res
 
 from ._common import TaskCtx, chunk_db_id
 from .compile.splice import _delivered_map
@@ -217,6 +217,19 @@ class _Bilingual:
             expect_cjk=ctx.expect_cjk,
             should_cancel=ctx.cancel_flag.is_set,
         )
+        if v.status != "clean" and self._fixloop_enabled(ctx):
+            # 与 zh 编译同一套规则修复（字体 shim、缺包等）：对照版从 base/ 重新拼装，
+            # zh 侧 build-zh 里的修复不会带过来（2601.00393 ifsym10 实案）
+            res, _summary, _rescued = self._fixloop_pass(
+                ctx,
+                bi_dir,
+                self._engine(ctx),
+                res,
+                cond="bi",
+                expect_cjk=ctx.expect_cjk,
+                probe_flags=ctx.probe_flags,
+            )
+            v = judge_res(res, expect_cjk=ctx.expect_cjk)
         self._log(
             ctx,
             f"bilingual: verdict {v.status} cat={v.category} errs={v.n_errors}",
