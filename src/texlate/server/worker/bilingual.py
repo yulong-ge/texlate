@@ -88,6 +88,35 @@ def _brace_depths(text: str, positions: list[int]) -> dict[int, int]:
     return out
 
 
+def _braces_balanced(text: str) -> bool:
+    r"""块内花括号自成配对（深度从不为负、结尾归零；跳过注释与转义）。
+
+    ``{\looseness=-1 This work ...`` 这类块的 ``{`` 在块内、``}`` 在块外——
+    原文副本夹在 ``\texlateorigbegin``/``\texlateorigend`` 的分组之间会错配
+    （2601.00393 致谢段实案：Missing } inserted）。
+    """
+    depth = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "%":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth < 0:
+                return False
+        i += 1
+    return depth == 0
+
+
 def _bi_text(src: str, zh: str) -> str:
     """正文块对照形：原文（灰、计数器隔离）在前，译文在后，各成段。"""
     return f"\\texlateorigbegin {src}\\texlateorigend\n\n{zh}"
@@ -150,13 +179,16 @@ class _Bilingual:
                     c.context == "para"
                     and c.env in _BI_ENVS
                     and depth[c.span.start] == 0
+                    and _braces_balanced(c.content)
                 ):
                     by_int[c.id] = _bi_text(c.content, zh)
                     paired += 1
                 else:
                     by_int[c.id] = zh
                     zh_only[
-                        c.env or ("{arg}" if depth[c.span.start] else c.context)
+                        c.env
+                        or ("{arg}" if depth[c.span.start] else None)
+                        or ("{unbalanced}" if c.context == "para" else c.context)
                     ] += 1
             if not by_int:
                 continue

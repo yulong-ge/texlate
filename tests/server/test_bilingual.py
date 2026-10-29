@@ -14,7 +14,7 @@ from conftest import FakeEngine, make_app, mk_task_row, upload_tex, wait_termina
 from starlette.testclient import TestClient
 
 from texlate.server.store import Store
-from texlate.server.worker.bilingual import _bi_text, _brace_depths
+from texlate.server.worker.bilingual import _bi_text, _brace_depths, _braces_balanced
 from texlate.xlat.pipeline import MockTranslator
 
 if TYPE_CHECKING:
@@ -40,6 +40,19 @@ def test_bi_text_puts_original_first_then_translation() -> None:
         out
         == "\\texlateorigbegin Hello [[MATH_1]].\\texlateorigend\n\n你好 [[MATH_1]]。"
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "ok"),
+    [
+        ("plain {\\bf x} and \\{ escaped", True),
+        ("{\\looseness=-1 This work was supported (No.~L257015).", False),
+        ("tail of group} then {open", False),
+        ("100\\% sure % comment {\nnext", True),
+    ],
+)
+def test_braces_balanced(text: str, ok: bool) -> None:  # noqa: FBT001
+    assert _braces_balanced(text) is ok
 
 
 def _wait_event(db: Path, tid: str, needle: str, timeout: float = 20.0) -> None:
