@@ -111,11 +111,12 @@ def _splice_writeback(
         trans = by_file.get(idx)
         if not trans:
             continue
+        # Moving arguments are replayed into PDF outline auxiliary files;
+        # keep their MCID specials out of those strings.
         zh = reconstruct(
             res,
             trans,
             mark_seq0=cur0 if marks_on else None,
-            mark_moving=marks_on,
         )
         if marks_on and (issues := seq_mark_issues(zh)):
             log.warning(

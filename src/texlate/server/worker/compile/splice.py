@@ -171,11 +171,13 @@ class _CompileSplice:
                     by_int[c.id] = zh
             if not by_int:
                 continue
+            # moving arguments (title/section/caption) are replayed into .toc/.out
+            # and then into PDF outlines. Marking them leaks /TLXC MCID specials
+            # into bookmarks; body paragraph anchors remain enabled by default.
             out = reconstruct(
                 res,
                 by_int,
                 mark_seq0=cur0 if marks_on else None,
-                mark_moving=marks_on,
             )
             if marks_on and (issues := seq_mark_issues(out)):
                 self._log(ctx, f"seqmarks {rel} 失衡({'; '.join(issues)})——剥锚降级")

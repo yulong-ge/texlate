@@ -493,18 +493,15 @@ def test_resplice_env_flag_default(
     assert "TLXC" in (work / "main.tex").read_text(encoding="utf-8")
 
 
-def test_resplice_moving_ctx_marked(tmp_path: Path) -> None:
-    r"""vtex 含 ``\tableofcontents`` 也全量注锚——moving ctx 照注（目录重放
-    出的重复 occurrence 由读侧 seqpos occurrence 校验收敛）、para 同注。"""
+def test_resplice_moving_ctx_unmarked(tmp_path: Path) -> None:
+    r"""moving-argument chunk 不注锚，避免 MCID special 泄漏进 PDF 目录书签。"""
     body = "\\tableofcontents\n\n" + _BODY2
     work, run = _mk_run(tmp_path, {"main.tex": (body, dict(_ZH2))})
-    run.scans[0][1].chunks[
-        0
-    ].context = "section"  # post-parse 改面（谓词直读 Chunk.context）
+    run.scans[0][1].chunks[0].context = "section"
     _resplice(run, work, "main.tex", {0}, seq_marks=True)
     zh = (work / "main.tex").read_text(encoding="utf-8")
-    assert _mcid(0) in zh  # section chunk 照注
-    assert _mcid(1) in zh  # para chunk 照注
+    assert _mcid(0) not in zh  # section/title occurrence is copied to .toc
+    assert _mcid(1) in zh  # body paragraph remains addressable
 
 
 def test_resplice_imbalance_self_heal(

@@ -296,9 +296,9 @@ def reconstruct(
     基址——非 None 即注锚：``[[CHUNK_n]]`` 引用点按安全谓词包
     ``/TLXC <</MCID 50000+seq>> BDC`` marked-content 锚（seq = mark_seq0
     + chunk 下标）；identity 面同样可注（en.pdf 源侧锚——glue/cjk 修正
-    仍随译文缺席而关，产物 = 原文 + 纯锚）。``mark_moving`` 由调用方
-    证明无 ``\\tableofcontents``/``\\listof*``/hyperref 后放行
-    moving-arg chunk。
+    仍随译文缺席而关，产物 = 原文 + 纯锚）。``mark_moving`` 仅供隔离
+    诊断或明确证明不生成 PDF 书签的调用方使用；生产编译路径保持默认
+    ``False``，避免 MCID special 进入 moving argument。
     """
     glue_latin = translations is not None
     marking = mark_seq0 is not None

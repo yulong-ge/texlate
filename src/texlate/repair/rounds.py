@@ -109,11 +109,12 @@ def _resplice_and_diffs(  # noqa: PLR0913 -- 注入面穿透（写盘/diff/锚�
     for fidx in sorted(fidxs):
         f, res = run.scans[fidx]
         seq0 = sum(len(run.scans[j][1].chunks) for j in range(fidx))
+        # Keep moving arguments unmarked; repair runs can rewrite titles and
+        # captions that hyperref later copies into PDF outlines.
         zh = reconstruct(
             res,
             run.trans.get(fidx) or {},
             mark_seq0=seq0 if marks_on else None,
-            mark_moving=marks_on,
         )
         if marks_on and (issues := seq_mark_issues(zh)):
             log.warning(

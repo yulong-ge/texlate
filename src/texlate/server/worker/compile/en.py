@@ -114,7 +114,9 @@ class _CompileEn:
             if not res.chunks:
                 continue
             try:
-                out = reconstruct(res, None, mark_seq0=cur0, mark_moving=True)
+                # Keep moving arguments unmarked so hyperref outlines receive
+                # clean strings; only body anchors are needed for alignment.
+                out = reconstruct(res, None, mark_seq0=cur0)
             except Exception as e:  # noqa: BLE001 -- 注锚失败=原样编译
                 self._log(ctx, f"seqmarks-en {rel} 注锚异常({e})——原样编译")
                 continue
