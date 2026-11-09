@@ -243,11 +243,13 @@ class AppDeps:
         cache_key: str | None,
         task_id: str | None = None,
         incoming_bytes: int = 0,
+        use_idempotency: bool = True,
     ) -> tuple[dict[str, Any], int, dict[str, Any]]:
         """dedup/reuse/idempotency 判别 + 建行 + 入队。
 
         返回 ``(row, http_status, extra_body)``——reuse/idempotent 命中时
-        status 200/202 且不新建。
+        status 200/202 且不新建。整篇重译用 ``use_idempotency=False``
+        跳过请求头及 options 的幂等键，保证每次调用独立建行。
         """
         auth = self.auth(request)
         store = self.store
@@ -263,7 +265,11 @@ class AppDeps:
         explicit_mock = (
             mock_env or self.worker._translator_factory is not None  # noqa: SLF001 -- 装配注入面只读探测（同 _llm_hook_pack 判据）
         )
-        idem = request.headers.get("idempotency-key") or options.get("idempotency_key")
+        idem = (
+            (request.headers.get("idempotency-key") or options.get("idempotency_key"))
+            if use_idempotency
+            else None
+        )
         if idem:
             hit = store.find_by_idempotency(auth.tenant, str(idem))
             if hit is not None:

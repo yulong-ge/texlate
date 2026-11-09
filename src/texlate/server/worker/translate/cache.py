@@ -102,8 +102,8 @@ class _TranslateCache:
           本项兜 factory 注入/未来新入口的零 key 跑；
         - ``TEXLATE_TRANSLATOR=mock`` / 行 ``mock_run`` 标记：mock 产物
           永不进共享缓存；
-        - ``no_seg_cache`` 内部选项：retry 闸对 mock_run 行注入——绕开
-          mock 期写入的存量残毒（读面也断）。
+        - ``no_seg_cache`` 内部选项：整篇重译与 mock_run 重试注入，
+          强制跳过持久段缓存读取和写入。
         """
         opts = ctx.options()
         if (

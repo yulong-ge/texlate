@@ -49,6 +49,60 @@ if TYPE_CHECKING:
 _ALL_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES
 
 
+def _enqueue_arxiv(  # noqa: PLR0913, PLR0917 -- arXiv 创建共用的请求与任务参数
+    deps: AppDeps,
+    request: Request,
+    arxiv_id: str,
+    options: dict[str, Any],
+    model: str,
+    target_lang: str,
+    *,
+    use_idempotency: bool = True,
+) -> Response:
+    """共用 arXiv 任务键、渠道参数与建行入队规则。"""
+    base, ver = normalize_arxiv_id(arxiv_id)
+    prefer = str(options.get("prefer") or "reuse")
+    if prefer not in ("reuse", "fresh"):
+        return _json_error(400, "options.prefer ∈ reuse|fresh", "invalid_request")
+    # source 已经 _clean_task_options 白名单规范化（eprint|html）。
+    # eprint 是历史默认、键材料不动（存量缓存续命）——仅非默认源追加
+    # ``source=`` 成分（与 worker cache_key_for 的 no-op 默认同语义，
+    # 也让本调用点对未带 source 形参的旧签名兼容）
+    source = str(options.get("source") or "eprint")
+    kind = "arxiv_html" if source == "html" else "arxiv"
+    # front_matter 改变扫描块集 → 进 dedup 材料分桶（∅ 不配成分，
+    # 与前置全盖过的存量缓存同桶——见 cache_key_for 文档）
+    effort = deps.reasoning_effort_for(request, model)
+    if effort:
+        # options_json 是任务实际运行参数的持久化面——share cache_key
+        # 重算与 retry 同源，不靠当前渠道表回放历史产物。
+        options["reasoning_effort"] = effort
+    cache_key = cache_key_for(
+        arxiv_id=base,
+        version=ver,
+        model=model,
+        target_lang=target_lang,
+        api_key=deps.auth(request).api_key,
+        source=source,
+        front_matter=front_matter_of(options),
+        reasoning_effort=effort,
+    )
+    row, status, extra = deps.create_and_enqueue(
+        request,
+        kind=kind,
+        arxiv_id=base,
+        source_name=arxiv_id,
+        title="",
+        model=model,
+        target_lang=target_lang,
+        options=options,
+        prefer=prefer,
+        cache_key=cache_key,
+        use_idempotency=use_idempotency,
+    )
+    return _accepted(row, status, extra)
+
+
 def register(app: FastAPI, deps: AppDeps) -> None:  # noqa: C901, PLR0915 -- 端点面平铺
     """挂载任务域端点（§2.1/§2.2/§2.5 + retranslate）。"""
     # ------------------------------------------------------------ §2.1 arxiv
@@ -56,7 +110,7 @@ def register(app: FastAPI, deps: AppDeps) -> None:  # noqa: C901, PLR0915 -- 端
     @app.post("/api/arxiv/{arxiv_id:path}/translate")
     async def arxiv_translate(request: Request, arxiv_id: str) -> Response:
         """建 arxiv 任务：202 + cache_key dedup/reuse（§2.1）。"""
-        base, ver = normalize_arxiv_id(arxiv_id)
+        base, _ver = normalize_arxiv_id(arxiv_id)
         if not valid_id(base):
             return _json_error(
                 400, f"invalid arxiv id: {arxiv_id!r}", "invalid_request"
@@ -80,45 +134,47 @@ def register(app: FastAPI, deps: AppDeps) -> None:  # noqa: C901, PLR0915 -- 端
             str(body.get("model") or ""),
             str(body.get("target_lang") or ""),
         )
-        prefer = str(options.get("prefer") or "reuse")
-        if prefer not in ("reuse", "fresh"):
-            return _json_error(400, "options.prefer ∈ reuse|fresh", "invalid_request")
-        # source 已经 _clean_task_options 白名单规范化（eprint|html）。
-        # eprint 是历史默认、键材料不动（存量缓存续命）——仅非默认源追加
-        # ``source=`` 成分（与 worker cache_key_for 的 no-op 默认同语义，
-        # 也让本调用点对未带 source 形参的旧签名兼容）
-        source = str(options.get("source") or "eprint")
-        kind = "arxiv_html" if source == "html" else "arxiv"
-        # front_matter 改变扫描块集 → 进 dedup 材料分桶（∅ 不配成分，
-        # 与前置全盖过的存量缓存同桶——见 cache_key_for 文档）
-        effort = deps.reasoning_effort_for(request, model)
-        if effort:
-            # options_json 是任务实际运行参数的持久化面——share cache_key
-            # 重算与 retry 同源，不靠当前渠道表回放历史产物。
-            options["reasoning_effort"] = effort
-        cache_key = cache_key_for(
-            arxiv_id=base,
-            version=ver,
-            model=model,
-            target_lang=target_lang,
-            api_key=deps.auth(request).api_key,
-            source=source,
-            front_matter=front_matter_of(options),
-            reasoning_effort=effort,
+        return _enqueue_arxiv(deps, request, arxiv_id, options, model, target_lang)
+
+    @app.post("/api/task/{task_id}/retranslate")
+    async def task_retranslate(request: Request, task_id: str) -> Response:
+        """终态 arXiv 任务整篇重译：每次新建，保留原任务及产物。
+
+        Body 只收 ``{}``；沿用用户翻译选项，按当前渠道决议模型，
+        跳过任务复用、幂等命中与持久段缓存读写。
+        """
+        row = deps.get_task(request, task_id)
+        if row["status"] not in TERMINAL_STATUSES:
+            return _json_error(
+                409, "retranslate 要求原任务已终止", "invalid_transition"
+            )
+        if row["kind"] not in ("arxiv", "arxiv_html") or not row["arxiv_id"]:
+            return _json_error(400, "retranslate 仅支持 arXiv 任务", "invalid_request")
+        if await _read_body(request):
+            return _json_error(400, "retranslate body 仅支持 {}", "invalid_request")
+        options = row_json(row, "options_json")
+        for key in ("idempotency_key", "prefer", "served_by", "reasoning_effort"):
+            options.pop(key, None)
+        options.setdefault(
+            "source", "html" if row["kind"] == "arxiv_html" else "eprint"
         )
-        row, status, extra = deps.create_and_enqueue(
+        options = _clean_task_options(options)
+        options["prefer"] = "fresh"
+        options["no_seg_cache"] = True
+        model, target_lang = deps.resolve_model_lang(request, "", row["target_lang"])
+        arxiv_id = str(row["arxiv_id"])
+        # fetch 已钉版时不能退回原始无版本请求；未 fetch 的终态仍保留用户钉版。
+        if normalize_arxiv_id(arxiv_id)[1] is None:
+            arxiv_id = str(row["source_name"] or arxiv_id)
+        return _enqueue_arxiv(
+            deps,
             request,
-            kind=kind,
-            arxiv_id=base,
-            source_name=arxiv_id,
-            title="",
-            model=model,
-            target_lang=target_lang,
-            options=options,
-            prefer=prefer,
-            cache_key=cache_key,
+            arxiv_id,
+            options,
+            model,
+            target_lang,
+            use_idempotency=False,
         )
-        return _accepted(row, status, extra)
 
     # ------------------------------------------------------------ §2.2 task/SSE
 

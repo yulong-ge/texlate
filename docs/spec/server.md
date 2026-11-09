@@ -12,6 +12,8 @@ FastAPI 应用由 `server/app.py` 装配，路由、SQLite store 和任务 worke
 
 同缓存键的活跃任务通过去重槽防止重复消费；`duplicate_active` 返回现存任务，客户端可收养其 task id。缓存键与共享格式由 `share.py` 定义，不能在客户端自行推算替代服务端值。`task_usage` 聚合真实 `calls`、输入 `prompt_tokens`、输出 `completion_tokens`、缓存读取 `cached_tokens` 与 API `latency_s`；老库打开时自动补缓存列，旧行按 0 读取。
 
+`POST /api/task/{task_id}/retranslate` 接收空 JSON 对象 `{}`，仅允许 `arxiv`、`arxiv_html` 任务的六种终态。原任务仍活跃时返回 409；任务类型不支持或 body 含字段时返回 400。入口通过原任务的租户检查，每次调用都创建新任务并返回 202，保留原任务行和产物；请求幂等键不参与复用。新任务保留取源方式、版本、目标语言、主文件选择、`front_matter` 和用户翻译选项，模型与渠道按当前配置重新决议。运行期审计字段不继承；强制 `prefer=fresh` 跳过任务复用，并持久化内部 `no_seg_cache=true`，通过 `_NullCache` 阻断持久段缓存读取和写入，同一次运行内仍可复用重复段。旧服务未提供此端点时可能返回 404，或因 GET 通配路由返回 405；客户端均须提示升级服务。
+
 ## 认证与隔离
 
 `local` 模式用于本机，依靠回环对端与 Host 校验；绑定非回环不提供完整的多用户认证保证。`server` 模式通过 `X-Texlate-Key` 认证写操作，任务访问还经过租户检查；知道 task id 不等于获得访问权限。
