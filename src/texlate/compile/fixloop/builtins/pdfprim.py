@@ -43,6 +43,7 @@ _PRIM_COUNTISH = frozenset(
         "pdfobjcompresslevel",
         "pdfgentounicode",
         "pdfsuppressptexinfo",
+        "pdfinfoomitdate",
         "pdfadjustspacing",
         "pdfprotrudechars",
         "pdftracingfonts",
@@ -146,6 +147,7 @@ _PRIM_ARGFUL: dict[str, str] = {
     "pdfnames": "#1",
     "pdfinfo": "#1",
     "pdftrailer": "#1",
+    "pdftrailerid": "#1",
     # 文字流/色彩栈/字体映射
     "pdfliteral": "#1",
     "pdfcolorstack": "#1",

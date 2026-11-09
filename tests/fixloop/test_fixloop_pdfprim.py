@@ -64,12 +64,34 @@ def _match(ctx: LoopCtx, cat: str, pay: str | None, rep: ErrReport) -> Rule | No
     return rule
 
 
+@pytest.mark.parametrize("prim", ["pdfinfoomitdate", "pdftrailerid"])
+def test_pdf_metadata_primitives_are_guarded(tmp_path: Path, prim: str) -> None:
+    """2610.31668: metadata-only pdfTeX directives must not block XeLaTeX."""
+    ctx = _ctx(
+        tmp_path,
+        "\\documentclass{article}\n"
+        "\\pdfinfoomitdate=1 \\pdftrailerid{}\n"
+        "\\begin{document}\nSurvey body.\n\\end{document}\n",
+    )
+    rule = _match(ctx, "pdftex_prim", prim, ErrReport(file_stack=["./main.tex"]))
+    assert rule is not None
+    assert rule.id == "pdftex_prim_guard"
+    out = (tmp_path / "main.tex").read_text(encoding="utf-8")
+    assert "\\ifdefined\\pdfinfoomitdate\\pdfinfoomitdate=1" in out
+    assert out.count("\\fi") == 2  # noqa: PLR2004 -- 两个原语的守卫都须闭合
+    assert "\\ifdefined\\pdftrailerid\\pdftrailerid{}\\fi" in out
+
+
 # ---------------------------------------------------------------- 注册/接线
 def test_at_family_tables_registered_disjoint() -> None:
     """`pdf@` 族入 PDFTEX_PRIMS; box/toks/count/argful 四臂互斥。"""
     at_names = {p for p in builtins.PDFTEX_PRIMS if "@" in p}
     assert "pdf@box" in at_names
     assert "pdf@addtoksx" in at_names
+    assert "pdfinfoomitdate" in builtins.PDFTEX_PRIMS
+    assert "pdftrailerid" in builtins.PDFTEX_PRIMS
+    assert "pdfinfoomitdate" in pdfprim._PRIM_COUNTISH  # noqa: SLF001
+    assert pdfprim._PRIM_ARGFUL["pdftrailerid"] == "#1"  # noqa: SLF001
     assert frozenset({"pdf@box"}) == pdfprim._PRIM_BOXISH  # noqa: SLF001
     buckets = [
         pdfprim._PRIM_COUNTISH,  # noqa: SLF001
