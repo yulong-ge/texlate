@@ -88,6 +88,41 @@ _SHELL_ESCAPE_FLAGS: Final = frozenset(
 )
 
 
+def _aux_state(out: Path, stem: str) -> tuple[tuple[str, bytes], ...] | None:
+    """Snapshot cross-reference inputs; a missing main aux cannot prove convergence."""
+    if not (out / f"{stem}.aux").is_file():
+        return None
+    suffixes = {".aux", ".toc", ".out", ".lof", ".lot"}
+    return tuple(
+        (str(p.relative_to(out)), p.read_bytes())
+        for p in sorted(out.rglob("*"))
+        if p.is_file() and p.suffix in suffixes
+    )
+
+
+class _BundledBblConvergence:
+    """Track unchanged reference files only when the bibliography cannot be regenerated."""
+
+    def __init__(self, wdir: Path, cwd: Path, stem: str, passes: int | None) -> None:
+        self.enabled = (
+            passes is None
+            and (cwd / f"{stem}.bbl").is_file()
+            and not any(wdir.rglob("*.bib"))
+        )
+        self.stem = stem
+        self.previous: tuple[tuple[str, bytes], ...] | None = None
+
+    def stable(
+        self, out: Path, rc: int | None, *, timed_out: bool | str, adopted: bool
+    ) -> bool:
+        if not self.enabled or rc != 0 or timed_out or adopted:
+            return False
+        current = _aux_state(out, self.stem)
+        stable = current is not None and current == self.previous
+        self.previous = current
+        return stable
+
+
 # ================================================================ xelatex
 class XelatexEngine(_XelatexEnv, _XelatexBib, _XelatexProbe, _XelatexInstall):
     """TeX Live xelatex：M0 开发默认（tlmgr 可修性实测最高，engine-matrix §5）。"""
@@ -196,12 +231,15 @@ class XelatexEngine(_XelatexEnv, _XelatexBib, _XelatexProbe, _XelatexInstall):
                 ]
                 res.flags_dropped += esc
                 cmd = [t for t in cmd if t not in _SHELL_ESCAPE_FLAGS]
-        outputs = []
+        outputs, p = [], 0
         eff_passes = MAX_PASSES if passes is None else passes
         per_pass = max(10.0, timeout / max(1, eff_passes))
         # while 非 for-range：bib 采纳后 eff_passes+1 要真吃进一趟
         # （range 界在入环时定死，中途改量不延趟——bibcite→aux→[n] 需 3 趟）。
-        p = 0
+        # Bundled bibliography without its .bib cannot be regenerated. Stop
+        # adaptive reruns once the aux/TOC state is unchanged; persistent Biber
+        # requests or unresolved references still remain in the final log.
+        convergence = _BundledBblConvergence(wdir, cwd, stem, passes)
         while p < eff_passes:
             p += 1
             rc, out_s, sec, to = _eng.run_process(
@@ -249,7 +287,9 @@ class XelatexEngine(_XelatexEnv, _XelatexBib, _XelatexProbe, _XelatexInstall):
                     should_cancel=should_cancel,
                 )
                 adopted = bool(res.bib_ran)
-            hint = hint or adopted
+            hint = (hint or adopted) and not convergence.stable(
+                out, rc, timed_out=to, adopted=adopted
+            )
             # 延趟两臂同一预算口径 (末趟到顶才延，各 +1): bib 本趟采纳
             # (钉死档亦延——新 bbl 须有人消费) 或自适应档提示仍在且未撞
             # ``_ADAPTIVE_PASS_CAP`` (qc-impl 批二，2026-09-28: bib 首趟采纳→

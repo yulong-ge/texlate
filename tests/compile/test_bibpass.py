@@ -325,6 +325,51 @@ def test_aux_scan_sorted_truncated_at_cap(
     assert not (tmp_path / "j.bbl").exists()
 
 
+@pytest.mark.parametrize(
+    ("passes", "has_bib", "expected"),
+    [(None, False, 2), (4, False, 4), (None, True, 4)],
+)
+def test_bundled_bbl_rerun_stops_when_aux_converges(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    passes: int | None,
+    has_bib: bool,  # noqa: FBT001 -- 文献源码存在与否是回归维度
+    expected: int,
+) -> None:
+    """Missing .bib cannot be repaired by rerunning an unchanged TeX pass."""
+    (tmp_path / "main.tex").write_text("x\n", encoding="utf-8")
+    (tmp_path / "main.bbl").write_text(_BBL_OK, encoding="utf-8")
+    if has_bib:
+        (tmp_path / "refs.bib").write_text("@article{a, title={A}}\n", encoding="utf-8")
+    calls: dict = {"xelatex": 0, "tools": []}
+    eng = _eng(monkeypatch, _fake_run(calls, out_s=_HINT), tools=False)
+    res = eng.compile(tmp_path, "main.tex", passes=passes, sandbox=False)
+    assert res.passes == expected
+    assert res.bib_ran == []
+    assert res.has_pdf
+
+
+def test_bundled_bbl_changed_toc_needs_another_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stable main.aux alone does not prove the table of contents converged."""
+    (tmp_path / "main.tex").write_text("x\n", encoding="utf-8")
+    (tmp_path / "main.bbl").write_text(_BBL_OK, encoding="utf-8")
+    calls: dict = {"xelatex": 0, "tools": []}
+    run = _fake_run(calls, out_s=_HINT)
+
+    def with_toc(cmd: list[str], **kwargs: object) -> tuple:
+        result = run(cmd, **kwargs)
+        (tmp_path / "main.toc").write_text(
+            str(min(calls["xelatex"], 2)), encoding="utf-8"
+        )
+        return result
+
+    eng = _eng(monkeypatch, with_toc, tools=False)
+    res = eng.compile(tmp_path, "main.tex", sandbox=False)
+    assert res.passes == 3  # noqa: PLR2004 -- 第二趟目录变化，第三趟才收敛
+
+
 def test_missing_tool_no_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """bibtex/biber 缺席 → 不触发不炸，编译照常收。"""
     (tmp_path / "main.tex").write_text("x\n", encoding="utf-8")
